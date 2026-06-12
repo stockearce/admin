@@ -2,7 +2,7 @@
   "name": "frontend",
   "private": true,
   "version": "0.0.0",
-  "homepage": "https://stockearce.github.io/admin",
+  "homepage": "https://stockearce.github.io/admin/",
   "type": "module",
  "scripts": {
   "dev": "vite",
