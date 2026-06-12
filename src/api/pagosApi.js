@@ -1,6 +1,6 @@
 // src/api/pagosApi.js
 
-const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000/pagos/api';
+const BASE = import.meta.env.VITE_API_URL ?? 'https://stockearce2026.pythonanywhere.com/pagos/api';
 
 const get = async (url) => {
   const r = await fetch(`${BASE}${url}`);

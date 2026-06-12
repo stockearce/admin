@@ -10,7 +10,7 @@ export default function Login({ onLogin }) {
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/pagos/api/verificar-superusuario/",
+        "https://stockearce2026.pythonanywhere.com/pagos/api/verificar-superusuario/",
         {
           method: "POST",
           headers: {
