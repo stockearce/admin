@@ -1,15 +1,17 @@
 // src/components/CierreDia.jsx - Versión con Modal integrado
-// src/components/CierreDia.jsx
-// src/components/CierreDia.jsx
 import { useState } from 'react';
 import { 
   procesarCierre, 
   getDetalleCierre, 
   registrarDeudorManual,
   registrarPagoDeudor,
-  getDeudores 
+  getDeudores,
+  devolverProductoVenta
 } from '../api/pagosApi';
 
+// ============================================================
+// ModalDeudor (sin cambios)
+// ============================================================
 function ModalDeudor({ venta, onClose, onSuccess }) {
   const [deudorInfo, setDeudorInfo] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -146,6 +148,145 @@ function ModalDeudor({ venta, onClose, onSuccess }) {
   );
 }
 
+// ============================================================
+// ModalDevolucionProducto (MODIFICADO para usar producto_id)
+// ============================================================
+function ModalDevolucionProducto({ venta, onClose, onSuccess }) {
+  const [productos, setProductos] = useState([]);
+  const [seleccionado, setSeleccionado] = useState(null);
+  const [cantidad, setCantidad] = useState(1);
+  const [cargando, setCargando] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const fmt = (n) => '$' + parseFloat(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 });
+
+  // Inicializar productos (ahora usamos producto_id)
+  useState(() => {
+    if (venta && venta.detalles) {
+      const items = venta.detalles.map((d, index) => ({
+        // Usamos el índice como identificador temporal si no tenemos producto_id
+        // Pero idealmente el backend debería enviar producto_id y detalle_id
+        // Para simplificar, usamos el índice + nombre como clave
+        id: d.producto_id || index,   // <-- Aquí obtenemos producto_id si el backend lo envía
+        nombre: d.producto,
+        presentacion: d.presentacion || 'Unidad',
+        cantidad_disponible: d.cantidad,
+        precio_unitario: d.precio_unitario,
+      }));
+      setProductos(items);
+      if (items.length > 0) setSeleccionado(items[0]);
+    }
+  }, [venta]);
+
+  const handleDevolver = async () => {
+    if (!seleccionado) {
+      setMsg({ tipo: 'error', texto: 'Selecciona un producto' });
+      return;
+    }
+    const cant = parseInt(cantidad, 10);
+    if (isNaN(cant) || cant <= 0) {
+      setMsg({ tipo: 'error', texto: 'Cantidad inválida' });
+      return;
+    }
+    if (cant > seleccionado.cantidad_disponible) {
+      setMsg({ tipo: 'error', texto: `Solo hay ${seleccionado.cantidad_disponible} unidades disponibles` });
+      return;
+    }
+
+    setCargando(true);
+    setMsg(null);
+    // Enviamos producto_id (si no existe, usamos el id que pusimos antes, pero idealmente debe ser el ID real)
+    const productoId = seleccionado.id;
+    if (typeof productoId !== 'number' || isNaN(productoId)) {
+      setMsg({ tipo: 'error', texto: 'Error: el producto no tiene un ID válido. Contacta soporte.' });
+      setCargando(false);
+      return;
+    }
+    const body = {
+      venta_id: venta.venta_id,
+      producto_id: productoId,
+      cantidad: cant,
+      ajustar_cajas: false,
+    };
+    const response = await devolverProductoVenta(body);
+    setCargando(false);
+    if (response.success) {
+      setMsg({ tipo: 'success', texto: `✅ ${response.mensaje}` });
+      setTimeout(() => {
+        onSuccess();
+        onClose();
+      }, 1500);
+    } else {
+      setMsg({ tipo: 'error', texto: response.error });
+    }
+  };
+
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: 'white', borderRadius: 12, padding: '1.5rem', maxWidth: 500, width: '90%', maxHeight: '80vh', overflow: 'auto' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <h3 style={{ margin: 0 }}>🔄 Devolver producto</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer' }}>×</button>
+        </div>
+        <div style={{ marginBottom: '1rem', padding: '0.75rem', background: '#f5f5f5', borderRadius: 8 }}>
+          <div style={{ fontWeight: 500 }}>{venta.cliente}</div>
+          <div style={{ fontSize: 12, color: '#666' }}>Venta #{venta.venta_id} • Total: {fmt(venta.monto_total)}</div>
+        </div>
+
+        {productos.length === 0 && (
+          <div className="msg warning">⚠️ Esta venta no tiene productos para devolver.</div>
+        )}
+
+        {productos.length > 0 && (
+          <>
+            <div className="row">
+              <label>📦 Producto</label>
+              <select
+                value={seleccionado?.id || ''}
+                onChange={(e) => {
+                  const found = productos.find(p => p.id === parseInt(e.target.value, 10));
+                  setSeleccionado(found);
+                  setCantidad(1);
+                }}
+                style={{ width: '100%', padding: '8px' }}
+              >
+                {productos.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.nombre} {p.presentacion ? `(${p.presentacion})` : ''} - disp: {p.cantidad_disponible}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="row">
+              <label>🔢 Cantidad a devolver</label>
+              <input
+                type="number"
+                min="1"
+                max={seleccionado?.cantidad_disponible || 1}
+                value={cantidad}
+                onChange={(e) => setCantidad(e.target.value)}
+                style={{ width: '100%', padding: '8px' }}
+              />
+              <small style={{ color: '#666' }}>Máximo: {seleccionado?.cantidad_disponible || 0}</small>
+            </div>
+            <div className="btn-row" style={{ marginTop: '1rem' }}>
+              <button className="btn primary" onClick={handleDevolver} disabled={cargando}>
+                {cargando ? 'Procesando...' : '✓ Devolver producto'}
+              </button>
+              <button className="btn" onClick={onClose}>Cancelar</button>
+            </div>
+          </>
+        )}
+
+        {msg && <div className={`msg ${msg.tipo}`} style={{ marginTop: '1rem' }}>{msg.texto}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// COMPONENTE PRINCIPAL CierreDia
+// ============================================================
 export default function CierreDia() {
   const hoy = new Date().toISOString().split('T')[0];
   const [fecha, setFecha] = useState(hoy);
@@ -156,22 +297,20 @@ export default function CierreDia() {
   const [modoEdicion, setModoEdicion] = useState(false);
   const [modoEdicionActivo, setModoEdicionActivo] = useState(false);
   const [deudorModal, setDeudorModal] = useState(null);
+  const [devolucionModal, setDevolucionModal] = useState(null);
 
   const fmt = (n) => '$' + parseFloat(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 2 });
 
-  // ✅ FIX: si el cierre ya está cerrado, usar los montos reales del backend
   const calcularMontosIniciales = (ingresos, cerrado) => {
     const montos = {};
     for (const ing of ingresos) {
       const total = parseFloat(ing.monto_total);
       if (cerrado) {
-        // cierre ya procesado → usar monto_efectivo y monto_transferencia reales
         montos[ing.venta_id] = {
           efectivo: parseFloat(ing.monto_efectivo || 0),
           transferencia: parseFloat(ing.monto_transferencia || 0),
         };
       } else {
-        // preview → calcular por defecto según método de pago
         if (ing.metodo_pago === 'efectivo') {
           montos[ing.venta_id] = { efectivo: total, transferencia: 0 };
         } else if (ing.metodo_pago === 'cuenta_corriente') {
@@ -191,7 +330,6 @@ export default function CierreDia() {
     const d = await getDetalleCierre(fecha);
     if (d.success) {
       setVentasConsulta(d);
-      // ✅ pasar cerrado para que use los montos reales si ya está procesado
       setMontosEditados(calcularMontosIniciales(d.ingresos, d.cierre?.cerrado === true));
     } else {
       setVentasConsulta(null);
@@ -284,6 +422,13 @@ export default function CierreDia() {
     <div>
       {deudorModal && (
         <ModalDeudor venta={deudorModal} onClose={() => setDeudorModal(null)} onSuccess={() => consultarVentas()} />
+      )}
+      {devolucionModal && (
+        <ModalDevolucionProducto
+          venta={devolucionModal}
+          onClose={() => setDevolucionModal(null)}
+          onSuccess={() => consultarVentas()}
+        />
       )}
 
       <div className="card">
@@ -480,7 +625,7 @@ export default function CierreDia() {
                     </div>
                   </div>
 
-                  {/* ✅ MODO EDICIÓN: solo si no está cerrado */}
+                  {/* MODO EDICIÓN de montos (solo si no está cerrado) */}
                   {modoEdicionActivo && !yaEstaCerrado && !esCuentaCorriente && (
                     <div style={{ marginTop: '0.75rem', background: hayExceso ? '#fff0f0' : '#f0f7ff', border: `1px solid ${hayExceso ? '#ffb3b3' : '#b8d4ff'}`, borderRadius: 8, padding: '0.75rem' }}>
                       <div style={{ fontSize: 12, color: hayExceso ? '#dc3545' : '#0056b3', marginBottom: 8, fontWeight: 500 }}>
@@ -510,7 +655,7 @@ export default function CierreDia() {
                     </div>
                   )}
 
-                  {/* ✅ VISTA READONLY: montos reales si está cerrado, defaults si es preview sin edición */}
+                  {/* Vista readonly de montos */}
                   {(!modoEdicionActivo || yaEstaCerrado) && !esCuentaCorriente && (
                     <div style={{ marginTop: '0.75rem', background: yaEstaCerrado ? '#f0fff4' : '#e9ecef', border: yaEstaCerrado ? '1px solid #b2dfdb' : 'none', borderRadius: 8, padding: '0.75rem' }}>
                       <div style={{ fontSize: 12, color: '#6c757d', marginBottom: 4 }}>
@@ -528,18 +673,27 @@ export default function CierreDia() {
                     </div>
                   )}
 
+                  {/* Botones de gestión (solo si no está cerrado) */}
                   {!yaEstaCerrado && (
-                    <div style={{ marginTop: '0.75rem' }}>
+                    <div style={{ marginTop: '0.75rem', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                       <button
                         className="btn"
                         style={{ fontSize: 12, padding: '6px 12px', background: '#6c757d', color: 'white', border: 'none', cursor: 'pointer', borderRadius: 4 }}
                         onClick={() => setDeudorModal(ing)}
                       >
-                        📝 Gestionar como deudor / cuenta corriente
+                        📝 Gestionar como deudor
+                      </button>
+                      <button
+                        className="btn"
+                        style={{ fontSize: 12, padding: '6px 12px', background: '#dc3545', color: 'white', border: 'none', cursor: 'pointer', borderRadius: 4 }}
+                        onClick={() => setDevolucionModal(ing)}
+                      >
+                        🔄 Devolver producto
                       </button>
                     </div>
                   )}
 
+                  {/* Detalle expandido de productos */}
                   {expandido[ing.venta_id] && (
                     <div style={{ marginTop: '0.75rem', background: '#f9f9f9', borderRadius: 8, padding: '0.75rem' }}>
                       <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>

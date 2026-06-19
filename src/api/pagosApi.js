@@ -24,7 +24,7 @@ export const getDeudores = (estado = 'pendiente') => get(`/deudores/?estado=${es
 export const registrarPagoDeudor = (body) => post('/deudores/pago/', body);
 export const reportarDeudorDesdeCierre = (body) => post('/reportar-deudor-cierre/', body);
 export const registrarDeudorManual = (body) => post('/deudores/registrar/', body);
-
+export const devolverProductoVenta = (body) => post('/devolver-producto/', body);
 // ✅ Función CORREGIDA - recibe UNA SOLA fecha
 export const getHistorialCierres = (fecha) => {
   if (!fecha) {
